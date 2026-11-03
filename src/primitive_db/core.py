@@ -52,3 +52,16 @@ def create_table(
     save_metadata(DB_META_PATH, metadata)
 
     return metadata
+
+
+def drop_table(
+    metadata: dict[str, dict[str, str]], table_name: str
+) -> dict[str, dict[str, str]]:
+
+    if table_name not in metadata:
+        raise ValueError(f"Таблица {table_name} не существует.")
+
+    metadata.pop(table_name)
+    save_metadata(DB_META_PATH, metadata)
+
+    return metadata
