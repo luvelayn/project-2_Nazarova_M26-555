@@ -31,8 +31,10 @@ def run():
         match command:
             case "exit":
                 break
+
             case "create_table":
                 table_name, *columns = shlex.split(input())
+
                 try:
                     create_table(metadata, table_name, columns)
                 except (TypeError, ValueError) as e:
@@ -43,11 +45,14 @@ def run():
                         f'Таблица "{table_name}" успешно создана со столбцами: '
                         f"{', '.join(columns)}."
                     )
+
             case "list_tables":
                 for table_name in metadata.keys():
                     print(f"- {table_name}")
+
             case "drop_table":
                 table_name = input().strip()
+
                 try:
                     drop_table(metadata, table_name)
                 except ValueError as e:
@@ -55,8 +60,10 @@ def run():
                 else:
                     save_metadata(DB_META_PATH, metadata)
                     print(f'Таблица "{table_name}" успешно удалена.')
+
             case "help":
                 print_help()
+
             case _:
                 print("Неизвестная команда.\n")
                 print_help()
