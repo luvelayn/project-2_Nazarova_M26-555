@@ -41,14 +41,11 @@ def _parse_columns(columns: list[str]) -> dict[str, str]:
 def create_table(
     metadata: dict[str, dict[str, str]], table_name: str, columns: list[str]
 ) -> dict[str, dict[str, str]]:
-
     _validate_name(table_name, "таблицы")
-
     if table_name in metadata:
         raise ValueError(f"Таблица с именем {table_name} уже существует.")
 
     metadata[table_name] = _parse_columns(columns)
-
     save_metadata(DB_META_PATH, metadata)
 
     return metadata
@@ -57,7 +54,6 @@ def create_table(
 def drop_table(
     metadata: dict[str, dict[str, str]], table_name: str
 ) -> dict[str, dict[str, str]]:
-
     if table_name not in metadata:
         raise ValueError(f"Таблица {table_name} не существует.")
 
