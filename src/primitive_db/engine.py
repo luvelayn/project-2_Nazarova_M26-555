@@ -25,45 +25,90 @@ def run():
     print_help()
 
     while True:
-        command = prompt.string("Введите команду: ")
-        metadata = load_metadata(DB_META_PATH)
+        try:
+            metadata = load_metadata(DB_META_PATH)
+        except (OSError, ValueError) as e:
+            print(f"Не удалось загрузить метаданные: {e}")
+            break
+
+        input = prompt.string("Введите команду: ")
+
+        try:
+            tokens = shlex.split(input)
+        except ValueError:
+            print("Некорректный ввод команды. Попробуйте снова.")
+            continue
+
+        if not tokens:
+            continue
+
+        command, *args = tokens
+
+        if command in {"exit", "help", "list_tables"} and args:
+            print(f"Функция {command} не принимает аргументы. Попробуйте снова.")
+            continue
 
         match command:
             case "exit":
                 break
 
-            case "create_table":
-                table_name, *columns = shlex.split(input())
-
-                try:
-                    create_table(metadata, table_name, columns)
-                except (TypeError, ValueError) as e:
-                    print(f"Ошибка: {e}")
-                else:
-                    save_metadata(DB_META_PATH, metadata)
-                    print(
-                        f'Таблица "{table_name}" успешно создана со столбцами: '
-                        f"{', '.join(columns)}."
-                    )
-
-            case "list_tables":
-                for table_name in metadata.keys():
-                    print(f"- {table_name}")
-
-            case "drop_table":
-                table_name = input().strip()
-
-                try:
-                    drop_table(metadata, table_name)
-                except ValueError as e:
-                    print(f"Ошибка: {e}")
-                else:
-                    save_metadata(DB_META_PATH, metadata)
-                    print(f'Таблица "{table_name}" успешно удалена.')
-
             case "help":
                 print_help()
 
+            case "list_tables":
+                if not metadata:
+                    print("Таблиц пока нет.")
+                else:
+                    for table_name in metadata:
+                        print(f"- {table_name}")
+
+            case "create_table":
+                if len(args) < 2:
+                    print(
+                        f"Функция {command} должна принимать как минимум два аргумента."
+                        " Попробуйте снова."
+                    )
+                    continue
+
+                table_name, *columns = args
+
+                try:
+                    create_table(metadata, table_name, columns)
+                    save_metadata(DB_META_PATH, metadata)
+                except (TypeError, ValueError) as e:
+                    print(f"Ошибка: {e}")
+                except OSError as e:
+                    print(f"Не удалось сохранить метаданные: {e}")
+                else:
+                    columns_description = ", ".join(
+                        f"{name}:{dtype}"
+                        for name, dtype in metadata[table_name].items()
+                    )
+
+                    print(
+                        f'Таблица "{table_name}" успешно создана '
+                        f"со столбцами: {columns_description}."
+                    )
+
+            case "drop_table":
+                if len(args) != 1:
+                    print(
+                        f"Функция {command} должна принимать один аргумент. "
+                        "Попробуйте снова."
+                    )
+                    continue
+
+                table_name = args[0]
+
+                try:
+                    drop_table(metadata, table_name)
+                    save_metadata(DB_META_PATH, metadata)
+                except ValueError as e:
+                    print(f"Ошибка: {e}")
+                except OSError as e:
+                    print(f"Не удалось сохранить метаданные: {e}")
+                else:
+                    print(f'Таблица "{table_name}" успешно удалена.')
+
             case _:
-                print("Неизвестная команда.\n")
-                print_help()
+                print(f"Функции {command} нет. Попробуйте снова.")
