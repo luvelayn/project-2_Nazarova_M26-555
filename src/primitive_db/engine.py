@@ -31,7 +31,11 @@ def run():
             print(f"Не удалось загрузить метаданные: {e}")
             break
 
-        user_input = prompt.string("Введите команду: ")
+        try:
+            user_input = prompt.string("Введите команду: ")
+        except (KeyboardInterrupt, EOFError):
+            print("\nВыход из программы.")
+            break
 
         try:
             tokens = shlex.split(user_input)
@@ -50,6 +54,7 @@ def run():
 
         match command:
             case "exit":
+                print("Выход из программы.")
                 break
 
             case "help":
