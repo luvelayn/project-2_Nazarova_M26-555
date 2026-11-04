@@ -1,63 +1,65 @@
 from .constants import VALID_NAME_PATTERN, VALID_TYPES
 
 
-def _validate_name(name: str, entity: str) -> None:
+def _validate_name(name):
     if not VALID_NAME_PATTERN.fullmatch(name):
         raise ValueError(
-            f"Некорректное имя {entity}: {name}. "
+            f"Некорректное имя: {name}. "
             "Допустимы только латинские буквы, цифры и нижнее подчеркивание."
         )
 
 
-def _parse_columns(columns: list[str]) -> dict[str, str]:
-    columns_parsed = {"ID": "int"}
+def _parse_columns(columns):
+    """Validate column descriptions and return a schema with ID first."""
 
+    if not columns:
+        raise ValueError("Ожидается хотя бы один столбец в формате имя:тип.")
+
+    columns_parsed = {}
     for column in columns:
-        key, separator, val = column.partition(":")
+        name, separator, dtype = column.partition(":")
+        if not name or not separator or not dtype or ":" in dtype:
+            raise ValueError(
+                f"Некорректное значение: {column}. Ожидаемый формат: имя:тип"
+            )
+        _validate_name(name)
 
-        if not separator or not key or not val:
-            raise ValueError(f"Некорректное описание столбца: {column}.")
-
-        if key == "ID":
-            continue
-
-        _validate_name(key, "столбца")
-
-        if val not in VALID_TYPES:
+        if dtype not in VALID_TYPES:
             raise TypeError(
-                f'Некорректный тип для столбца "{key}": {val}. '
+                f'Некорректный тип для столбца "{name}": {dtype}. '
                 "Возможные типы: int, str, bool."
             )
-
-        if key in columns_parsed:
+        if name == "ID" and dtype != "int":
+            raise TypeError(
+                f'Некорректный тип для столбца "ID": {dtype}. Возможный тип: int.'
+            )
+        if name in columns_parsed:
             raise ValueError("Названия столбцов не могут повторяться.")
 
-        columns_parsed[key] = val
+        columns_parsed[name] = dtype
 
-    return columns_parsed
+    return {"ID": "int", **columns_parsed}
 
 
-def create_table(
-    metadata: dict[str, dict[str, str]], table_name: str, columns: list[str]
-) -> dict[str, dict[str, str]]:
+def create_table(metadata, table_name, columns):
+    """Validate a table schema and add it to metadata."""
 
-    _validate_name(table_name, "таблицы")
+    _validate_name(table_name)
 
     if table_name in metadata:
         raise ValueError(f'Таблица с именем "{table_name}" уже существует.')
 
     metadata[table_name] = _parse_columns(columns)
-
     return metadata
 
 
-def drop_table(
-    metadata: dict[str, dict[str, str]], table_name: str
-) -> dict[str, dict[str, str]]:
+def drop_table(metadata, table_name):
+    """Remove an existing table from metadata."""
+
+    _validate_name(table_name)
 
     if table_name not in metadata:
-        raise ValueError(f'Таблица "{table_name}"" не существует.')
+        raise ValueError(f'Таблица "{table_name}" не существует.')
 
     metadata.pop(table_name)
-
     return metadata
