@@ -31,10 +31,10 @@ def run():
             print(f"Не удалось загрузить метаданные: {e}")
             break
 
-        input = prompt.string("Введите команду: ")
+        user_input = prompt.string("Введите команду: ")
 
         try:
-            tokens = shlex.split(input)
+            tokens = shlex.split(user_input)
         except ValueError:
             print("Некорректный ввод команды. Попробуйте снова.")
             continue
