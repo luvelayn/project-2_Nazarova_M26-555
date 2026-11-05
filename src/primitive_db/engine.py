@@ -4,7 +4,7 @@ import prompt
 
 from .constants import DB_META_PATH
 from .core import create_table, drop_table
-from .utils import load_metadata, save_metadata
+from .utils import delete_table_data, load_metadata, save_metadata
 
 
 def print_help():
@@ -83,7 +83,7 @@ def run():
                 except (TypeError, ValueError) as e:
                     print(f"Ошибка: {e}")
                 except OSError as e:
-                    print(f"Не удалось сохранить метаданные: {e}")
+                    print(f"Не удалось создать таблицу: {e}")
                 else:
                     columns_description = ", ".join(
                         f"{name}:{dtype}"
@@ -106,14 +106,21 @@ def run():
                 table_name = args[0]
 
                 try:
-                    drop_table(metadata, table_name)
-                    save_metadata(DB_META_PATH, metadata)
-                except ValueError as e:
-                    print(f"Ошибка: {e}")
+                    delete_table_data(table_name)
                 except OSError as e:
-                    print(f"Не удалось сохранить метаданные: {e}")
+                    print(f"Не удалось удалить таблицу: {e}")
                 else:
-                    print(f'Таблица "{table_name}" успешно удалена.')
+                    try:
+                        drop_table(metadata, table_name)
+                        save_metadata(DB_META_PATH, metadata)
+                    except ValueError as e:
+                        print(f"Ошибка: {e}")
+                    except OSError as e:
+                        print(
+                            f"Не удалось удалить таблицу: {e}. Записи таблицы удалены."
+                        )
+                    else:
+                        print(f'Таблица "{table_name}" успешно удалена.')
 
             case _:
                 print(f"Функции {command} нет. Попробуйте снова.")
