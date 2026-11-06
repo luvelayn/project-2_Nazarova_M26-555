@@ -106,7 +106,9 @@ def _clause_item(clause, name):
 
 
 def _matches(row, column, value):
-    return column in row and row[column] == value
+    if column not in row:
+        raise ValueError(f"Не существует поля с именем {column}.")
+    return row[column] == value
 
 
 def select(table_data, where_clause=None):
@@ -125,6 +127,8 @@ def update(table_data, set_clause, where_clause):
 
     for row in table_data:
         if _matches(row, filter_column, filter_value):
+            if target_column not in row:
+                raise ValueError(f"Не существует поля с именем {target_column}.")
             row[target_column] = new_value
 
     return table_data
