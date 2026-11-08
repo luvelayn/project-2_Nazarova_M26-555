@@ -3,6 +3,7 @@ from .engine import run
 
 
 def main():
+    """Start the console database application."""
     run()
 
 
