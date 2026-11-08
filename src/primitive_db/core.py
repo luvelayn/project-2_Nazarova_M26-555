@@ -62,7 +62,7 @@ def validate_clause(schema, clause):
 
     column, value = _clause_item(clause)
     if column not in schema:
-        raise ValueError(f"Не существует столбца с именем {column}.")
+        raise ValueError(f'Не существует столбца с именем "{column}".')
     _validate_value(column, schema[column], value)
 
 
@@ -107,7 +107,7 @@ def insert(metadata, table_name, table_data, values):
 def _matches(row, column, value):
     """Return True if the field and value have the same type and are equal."""
     if column not in row:
-        raise ValueError(f"Не существует столбца с именем {column}.")
+        raise ValueError(f'Не существует столбца с именем "{column}".')
     return type(row[column]) is type(value) and row[column] == value
 
 
@@ -127,12 +127,12 @@ def update(table_data, set_clause, where_clause):
     """Update matching rows in place and return table_data, preserving IDs."""
     target_column, new_value = _clause_item(set_clause)
     if target_column == "ID":
-        raise ValueError("Изменять ID запрещено.")
+        raise ValueError('Изменять столбец "ID" запрещено.')
 
     matching_rows = select(table_data, where_clause)
     for row in matching_rows:
         if target_column not in row:
-            raise ValueError(f"Не существует поля с именем {target_column}.")
+            raise ValueError(f'Не существует столбца с именем "{target_column}".')
         _validate_value(target_column, type(row[target_column]).__name__, new_value)
 
     for row in matching_rows:
