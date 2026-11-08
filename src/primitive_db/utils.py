@@ -1,13 +1,13 @@
 import json
 import os
 
-from .constants import DB_DATA_PATH
+from .constants import DB_DATA_PATH, FILE_ENCODING, JSON_INDENT, TABLE_FILE_EXTENSION
 
 
 def _load_json(filepath, default):
     """Read JSON, returning the default if the file does not exist."""
     try:
-        with open(filepath, encoding="utf-8") as file:
+        with open(filepath, encoding=FILE_ENCODING) as file:
             return json.load(file)
     except FileNotFoundError:
         return default
@@ -18,8 +18,8 @@ def _save_json(filepath, data):
     directory = os.path.dirname(filepath)
     if directory:
         os.makedirs(directory, exist_ok=True)
-    with open(filepath, "w", encoding="utf-8") as file:
-        json.dump(data, file, ensure_ascii=False, indent=4)
+    with open(filepath, "w", encoding=FILE_ENCODING) as file:
+        json.dump(data, file, ensure_ascii=False, indent=JSON_INDENT)
 
 
 def load_metadata(filepath):
@@ -34,7 +34,7 @@ def save_metadata(filepath, data):
 
 def table_data_path(table_name):
     """Return the JSON file path for a table."""
-    return os.path.join(DB_DATA_PATH, f"{table_name}.json")
+    return os.path.join(DB_DATA_PATH, f"{table_name}{TABLE_FILE_EXTENSION}")
 
 
 def load_table_data(table_name):

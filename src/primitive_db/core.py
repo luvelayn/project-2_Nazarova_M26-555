@@ -1,14 +1,24 @@
-from .constants import VALID_TYPES
+from .constants import (
+    ACTION_NAMES,
+    FIRST_ID,
+    ID_COLUMN,
+    ID_TYPE,
+    MESSAGES,
+    NAME_EXTRA_CHARACTERS,
+    VALID_TYPE_NAMES,
+    VALID_TYPES,
+)
 from .decorators import confirm_action, handle_db_errors, log_time
 
 
 def _validate_name(name):
     """Check that a name contains only ASCII letters, digits and underscores."""
-    if not name or not name.isascii() or not name.replace("_", "a").isalnum():
-        raise ValueError(
-            f"Некорректное имя: {name}. "
-            "Допустимы только латинские буквы, цифры и нижнее подчеркивание."
-        )
+    if (
+        not name
+        or not name.isascii()
+        or not all(char.isalnum() or char in NAME_EXTRA_CHARACTERS for char in name)
+    ):
+        raise ValueError(MESSAGES["invalid_name"].format(name=name))
 
 
 def _validate_columns(columns):
@@ -19,17 +29,18 @@ def _validate_columns(columns):
 
         if dtype not in VALID_TYPES:
             raise TypeError(
-                f'Некорректный тип для столбца "{name}": {dtype}. '
-                "Возможные типы: int, str, bool."
+                MESSAGES["unsupported_type"].format(
+                    column=name, dtype=dtype, valid_types=VALID_TYPE_NAMES
+                )
             )
-        if name == "ID" and dtype != "int":
-            raise TypeError('Столбец "ID" должен иметь тип int.')
+        if name == ID_COLUMN and dtype != ID_TYPE:
+            raise TypeError(MESSAGES["id_type"])
         if name in schema:
-            raise ValueError("Имена столбцов не могут повторяться.")
+            raise ValueError(MESSAGES["duplicate_columns"])
 
         schema[name] = dtype
 
-    return {"ID": "int", **schema}
+    return {ID_COLUMN: ID_TYPE, **schema}
 
 
 @handle_db_errors
@@ -37,7 +48,7 @@ def get_table_schema(metadata, table_name):
     """Validate the table name and return its existing schema."""
     _validate_name(table_name)
     if table_name not in metadata:
-        raise ValueError(f'Таблица "{table_name}" не существует.')
+        raise ValueError(MESSAGES["missing_table"].format(table_name=table_name))
     return metadata[table_name]
 
 
@@ -46,8 +57,9 @@ def _validate_value(column, dtype, value):
     actual_type = type(value).__name__
     if type(value) is not VALID_TYPES[dtype]:
         raise TypeError(
-            f'Ожидаемый тип для столбца "{column}": {dtype}. '
-            f"Переданный тип: {actual_type}."
+            MESSAGES["wrong_type"].format(
+                column=column, dtype=dtype, actual_type=actual_type
+            )
         )
 
 
@@ -65,7 +77,7 @@ def validate_clause(schema, clause):
 
     column, value = _clause_item(clause)
     if column not in schema:
-        raise ValueError(f'Не существует столбца с именем "{column}".')
+        raise ValueError(MESSAGES["missing_column"].format(column=column))
     _validate_value(column, schema[column], value)
     return True
 
@@ -91,14 +103,14 @@ def create_table(metadata, table_name, columns):
     """Add a validated schema to metadata in place and return metadata."""
     _validate_name(table_name)
     if table_name in metadata:
-        raise ValueError(f'Таблица "{table_name}" уже существует.')
+        raise ValueError(MESSAGES["existing_table"].format(table_name=table_name))
 
     metadata[table_name] = _validate_columns(columns)
     return metadata
 
 
 @handle_db_errors
-@confirm_action("удаление таблицы")
+@confirm_action(ACTION_NAMES["drop_table"])
 def drop_table(metadata, table_name):
     """Remove a table schema from metadata in place and return metadata."""
     if get_table_schema(metadata, table_name) is None:
@@ -114,15 +126,17 @@ def insert(metadata, table_name, table_data, values):
     schema = get_table_schema(metadata, table_name)
     if schema is None:
         return None
-    columns = [(column, dtype) for column, dtype in schema.items() if column != "ID"]
+    columns = [
+        (column, dtype) for column, dtype in schema.items() if column != ID_COLUMN
+    ]
 
     if len(values) != len(columns):
         raise ValueError(
-            f"Ожидается значений: {len(columns)}. Передано: {len(values)}."
+            MESSAGES["value_count"].format(expected=len(columns), actual=len(values))
         )
 
-    new_id = max((row["ID"] for row in table_data), default=0) + 1
-    new_row = {"ID": new_id}
+    new_id = max((row[ID_COLUMN] for row in table_data), default=FIRST_ID - 1) + 1
+    new_row = {ID_COLUMN: new_id}
 
     for (column, dtype), value in zip(columns, values):
         _validate_value(column, dtype, value)
@@ -134,7 +148,7 @@ def insert(metadata, table_name, table_data, values):
 def _matches(row, column, value):
     """Return True if the field and value have the same type and are equal."""
     if column not in row:
-        raise ValueError(f'Не существует столбца с именем "{column}".')
+        raise ValueError(MESSAGES["missing_column"].format(column=column))
     return type(row[column]) is type(value) and row[column] == value
 
 
@@ -159,15 +173,17 @@ def update(table_data, set_clause, where_clause):
     Preserve IDs and leave the input list and row dictionaries unchanged.
     """
     target_column, new_value = _clause_item(set_clause)
-    if target_column == "ID":
-        raise ValueError('Изменять столбец "ID" запрещено.')
+    if target_column == ID_COLUMN:
+        raise ValueError(MESSAGES["id_update"])
 
     filter_column, filter_value = _clause_item(where_clause)
     updated_data = []
     for row in table_data:
         if _matches(row, filter_column, filter_value):
             if target_column not in row:
-                raise ValueError(f'Не существует столбца с именем "{target_column}".')
+                raise ValueError(
+                    MESSAGES["missing_column"].format(column=target_column)
+                )
             _validate_value(target_column, type(row[target_column]).__name__, new_value)
             row = row.copy()
             row[target_column] = new_value
@@ -177,7 +193,7 @@ def update(table_data, set_clause, where_clause):
 
 
 @handle_db_errors
-@confirm_action("удаление записей")
+@confirm_action(ACTION_NAMES["delete"])
 def delete(table_data, where_clause):
     """Return a new list of remaining rows without changing table_data."""
     column, value = _clause_item(where_clause)

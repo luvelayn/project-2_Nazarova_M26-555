@@ -2,6 +2,8 @@ import time
 
 import prompt
 
+from .constants import CONFIRMATION_NO, CONFIRMATION_YES, MESSAGES
+
 
 def handle_db_errors(func):
     """Display database errors and return None if the operation fails."""
@@ -11,16 +13,13 @@ def handle_db_errors(func):
         try:
             return func(*args, **kwargs)
         except FileNotFoundError:
-            print(
-                "Ошибка: Файл данных не найден. "
-                "Возможно, база данных не инициализирована."
-            )
+            print(MESSAGES["missing_data_file"])
         except KeyError as error:
-            print(f"Ошибка: Таблица или столбец {error} не найден.")
+            print(MESSAGES["missing_key"].format(key=error))
         except (ValueError, TypeError) as error:
-            print(f"Ошибка: {error}")
+            print(MESSAGES["error"].format(error=error))
         except Exception as error:
-            print(f"Произошла непредвиденная ошибка: {error}")
+            print(MESSAGES["unexpected_error"].format(error=error))
         return None
 
     wrapper.__name__ = func.__name__
@@ -38,13 +37,17 @@ def confirm_action(action_name):
             """Run the function only after the user enters y."""
             try:
                 answer = prompt.string(
-                    f'Вы уверены, что хотите выполнить "{action_name}"? [y/n]: '
+                    MESSAGES["confirm_action"].format(
+                        action_name=action_name,
+                        yes=CONFIRMATION_YES,
+                        no=CONFIRMATION_NO,
+                    )
                 )
             except (KeyboardInterrupt, EOFError):
                 answer = ""
 
-            if answer.strip() != "y":
-                print("Операция отменена.")
+            if answer.strip() != CONFIRMATION_YES:
+                print(MESSAGES["cancelled"])
                 return None
             return func(*args, **kwargs)
 
@@ -63,7 +66,11 @@ def log_time(func):
         started = time.monotonic()
         result = func(*args, **kwargs)
         duration = time.monotonic() - started
-        print(f"Функция {func.__name__} выполнилась за {duration:.3f} секунд.")
+        print(
+            MESSAGES["elapsed_time"].format(
+                function_name=func.__name__, duration=duration
+            )
+        )
         return result
 
     wrapper.__name__ = func.__name__

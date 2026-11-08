@@ -4,7 +4,17 @@ import shlex
 import prompt
 from prettytable import PrettyTable
 
-from .constants import DB_META_PATH
+from .constants import (
+    COLUMN_TYPE_SEPARATOR,
+    COMMAND_PROMPT,
+    COMMAND_USAGE,
+    DB_META_PATH,
+    HELP_LINES,
+    ID_COLUMN,
+    MESSAGES,
+    MIN_CREATE_TABLE_ARGS,
+    SCHEMA_DISPLAY_SEPARATOR,
+)
 from .core import (
     create_table,
     delete,
@@ -33,30 +43,7 @@ from .utils import (
 
 def print_help():
     """Print supported commands."""
-    print("Функции:")
-    print("<command> create_table <имя_таблицы> <столбец1:тип> ... - создать таблицу")
-    print("<command> list_tables - показать список всех таблиц")
-    print("<command> drop_table <имя_таблицы> - удалить таблицу")
-    print(
-        "<command> insert into <имя_таблицы> values (<значение1>, <значение2>, ...) "
-        "- создать запись"
-    )
-    print(
-        "<command> select from <имя_таблицы> where <столбец> = <значение> "
-        "- прочитать записи по условию"
-    )
-    print("<command> select from <имя_таблицы> - прочитать все записи")
-    print(
-        "<command> update <имя_таблицы> set <столбец1> = <новое_значение1> "
-        "where <столбец_условия> = <значение_условия> - обновить запись"
-    )
-    print(
-        "<command> delete from <имя_таблицы> where <столбец> = <значение> "
-        "- удалить запись"
-    )
-    print("<command> info <имя_таблицы> - вывести информацию о таблице")
-    print("<command> exit - выход из программы")
-    print("<command> help - справочная информация")
+    print("\n".join(HELP_LINES))
 
 
 def _parse_command(user_input):
@@ -64,7 +51,7 @@ def _parse_command(user_input):
     try:
         tokens = shlex.split(user_input)
     except ValueError:
-        raise ValueError("Некорректная строка в кавычках.") from None
+        raise ValueError(MESSAGES["invalid_quotes"]) from None
 
     if not tokens:
         return None, ()
@@ -73,16 +60,20 @@ def _parse_command(user_input):
     match command:
         case "exit" | "help" | "list_tables":
             if args:
-                raise ValueError(f"Ожидается: {command}")
+                raise ValueError(
+                    MESSAGES["expected_syntax"].format(usage=COMMAND_USAGE[command])
+                )
             return command, ()
         case "info" | "drop_table":
             if len(args) != 1:
-                raise ValueError(f"Ожидается: {command} <имя_таблицы>")
+                raise ValueError(
+                    MESSAGES["expected_syntax"].format(usage=COMMAND_USAGE[command])
+                )
             return command, (args[0],)
         case "create_table":
-            if len(args) < 2:
+            if len(args) < MIN_CREATE_TABLE_ARGS:
                 raise ValueError(
-                    "Ожидается: create_table <имя_таблицы> <столбец:тип> ..."
+                    MESSAGES["expected_syntax"].format(usage=COMMAND_USAGE[command])
                 )
             return command, (args[0], parse_columns(args[1:]))
         case "insert":
@@ -94,7 +85,7 @@ def _parse_command(user_input):
         case "delete":
             return command, parse_delete(user_input)
         case _:
-            raise ValueError(f"Функции {command} нет. Попробуйте снова.")
+            raise ValueError(MESSAGES["unknown_command"].format(command=command))
 
 
 def run():
@@ -106,13 +97,13 @@ def run():
         try:
             metadata = load_metadata(DB_META_PATH)
         except (OSError, ValueError) as error:
-            print(f"Не удалось загрузить метаданные: {error}")
+            print(MESSAGES["metadata_error"].format(error=error))
             break
 
         try:
-            user_input = prompt.string("\nВведите команду: ")
+            user_input = prompt.string(COMMAND_PROMPT)
         except (KeyboardInterrupt, EOFError):
-            print("\nВыход из программы.")
+            print("\n" + MESSAGES["exit"])
             break
 
         try:
@@ -127,7 +118,7 @@ def run():
         try:
             match command:
                 case "exit":
-                    print("Выход из программы.")
+                    print(MESSAGES["exit"])
                     break
 
                 case "help":
@@ -135,9 +126,9 @@ def run():
 
                 case "list_tables":
                     if not metadata:
-                        print("Таблиц пока нет.")
+                        print(MESSAGES["no_tables"])
                     for table_name in metadata:
-                        print(f"- {table_name}")
+                        print(MESSAGES["table_item"].format(table_name=table_name))
 
                 case "create_table":
                     table_name, columns = args
@@ -146,13 +137,14 @@ def run():
                         continue
                     save_table_data(table_name, [])
                     save_metadata(DB_META_PATH, updated_metadata)
-                    columns_description = ", ".join(
-                        f"{name}:{dtype}"
+                    columns_description = SCHEMA_DISPLAY_SEPARATOR.join(
+                        f"{name}{COLUMN_TYPE_SEPARATOR}{dtype}"
                         for name, dtype in updated_metadata[table_name].items()
                     )
                     print(
-                        f'Таблица "{table_name}" успешно создана '
-                        f"со столбцами: {columns_description}."
+                        MESSAGES["table_created"].format(
+                            table_name=table_name, columns=columns_description
+                        )
                     )
 
                 case "drop_table":
@@ -168,11 +160,12 @@ def run():
                         delete_table_data(table_name)
                     except OSError as error:
                         print(
-                            f'Таблица "{table_name}" удалена из метаданных, '
-                            f"но файл данных удалить не удалось: {error}"
+                            MESSAGES["drop_file_error"].format(
+                                table_name=table_name, error=error
+                            )
                         )
                     else:
-                        print(f'Таблица "{table_name}" успешно удалена.')
+                        print(MESSAGES["table_dropped"].format(table_name=table_name))
 
                 case "insert":
                     table_name, values = args
@@ -184,10 +177,11 @@ def run():
                         continue
                     cache_result = create_cacher()
                     save_table_data(table_name, table_data)
-                    new_id = table_data[-1]["ID"]
+                    new_id = table_data[-1][ID_COLUMN]
                     print(
-                        f"Запись с ID={new_id} успешно добавлена "
-                        f'в таблицу "{table_name}".'
+                        MESSAGES["inserted"].format(
+                            row_id=new_id, table_name=table_name
+                        )
                     )
 
                 case "select":
@@ -226,9 +220,9 @@ def run():
                     if matching_rows is None:
                         continue
                     if not matching_rows:
-                        print("Подходящие записи не найдены.")
+                        print(MESSAGES["no_matches"])
                         continue
-                    updated_ids = [row["ID"] for row in matching_rows]
+                    updated_ids = [row[ID_COLUMN] for row in matching_rows]
                     table_data = update(table_data, set_clause, where_clause)
                     if table_data is None:
                         continue
@@ -236,8 +230,9 @@ def run():
                     save_table_data(table_name, table_data)
                     for row_id in updated_ids:
                         print(
-                            f'Запись с ID={row_id} в таблице "{table_name}" '
-                            "успешно обновлена."
+                            MESSAGES["updated"].format(
+                                row_id=row_id, table_name=table_name
+                            )
                         )
 
                 case "delete":
@@ -250,9 +245,9 @@ def run():
                     if matching_rows is None:
                         continue
                     if not matching_rows:
-                        print("Подходящие записи не найдены.")
+                        print(MESSAGES["no_matches"])
                         continue
-                    deleted_ids = [row["ID"] for row in matching_rows]
+                    deleted_ids = [row[ID_COLUMN] for row in matching_rows]
                     table_data = delete(table_data, where_clause)
                     if table_data is None:
                         continue
@@ -260,8 +255,9 @@ def run():
                     save_table_data(table_name, table_data)
                     for row_id in deleted_ids:
                         print(
-                            f"Запись с ID={row_id} успешно удалена "
-                            f'из таблицы "{table_name}".'
+                            MESSAGES["deleted"].format(
+                                row_id=row_id, table_name=table_name
+                            )
                         )
 
                 case "info":
@@ -270,12 +266,13 @@ def run():
                     if schema is None:
                         continue
                     table_data = load_table_data(table_name)
-                    columns_description = ", ".join(
-                        f"{name}:{dtype}" for name, dtype in schema.items()
+                    columns_description = SCHEMA_DISPLAY_SEPARATOR.join(
+                        f"{name}{COLUMN_TYPE_SEPARATOR}{dtype}"
+                        for name, dtype in schema.items()
                     )
-                    print(f"Таблица: {table_name}")
-                    print(f"Столбцы: {columns_description}")
-                    print(f"Количество записей: {len(table_data)}")
+                    print(MESSAGES["table_name"].format(table_name=table_name))
+                    print(MESSAGES["table_columns"].format(columns=columns_description))
+                    print(MESSAGES["row_count"].format(count=len(table_data)))
 
         except (OSError, json.JSONDecodeError) as error:
-            print(f"Ошибка работы с файлами: {error}")
+            print(MESSAGES["file_error"].format(error=error))
