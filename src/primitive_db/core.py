@@ -34,7 +34,7 @@ def _validate_columns(columns):
 
 @handle_db_errors
 def get_table_schema(metadata, table_name):
-    """Check the table name and existence, then return its schema."""
+    """Validate the table name and return its existing schema."""
     _validate_name(table_name)
     if table_name not in metadata:
         raise ValueError(f'Таблица "{table_name}" не существует.')
@@ -70,6 +70,22 @@ def validate_clause(schema, clause):
     return True
 
 
+def prepare_table(metadata, table_name, *clauses):
+    """Return the table schema after validating the table and supplied clauses.
+
+    Each clause may be None. Return None if a validation error was handled.
+    """
+    schema = get_table_schema(metadata, table_name)
+    if schema is None:
+        return None
+
+    for clause in clauses:
+        if validate_clause(schema, clause) is None:
+            return None
+
+    return schema
+
+
 @handle_db_errors
 def create_table(metadata, table_name, columns):
     """Add a validated schema to metadata in place and return metadata."""
@@ -94,7 +110,7 @@ def drop_table(metadata, table_name):
 @handle_db_errors
 @log_time
 def insert(metadata, table_name, table_data, values):
-    """Return a new list with a validated row appended."""
+    """Return a new list of all rows with a validated row appended."""
     schema = get_table_schema(metadata, table_name)
     if schema is None:
         return None
@@ -138,7 +154,10 @@ def select(table_data, where_clause=None):
 
 @handle_db_errors
 def update(table_data, set_clause, where_clause):
-    """Return all rows with matching rows preserving IDs."""
+    """Return all rows in a new list, copying and updating matching rows.
+
+    Preserve IDs and leave the input list and row dictionaries unchanged.
+    """
     target_column, new_value = _clause_item(set_clause)
     if target_column == "ID":
         raise ValueError('Изменять столбец "ID" запрещено.')
@@ -160,6 +179,6 @@ def update(table_data, set_clause, where_clause):
 @handle_db_errors
 @confirm_action("удаление записей")
 def delete(table_data, where_clause):
-    """Return a new list without matching rows."""
+    """Return a new list of remaining rows without changing table_data."""
     column, value = _clause_item(where_clause)
     return [row for row in table_data if not _matches(row, column, value)]

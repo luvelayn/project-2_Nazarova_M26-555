@@ -9,11 +9,10 @@ from .core import (
     create_table,
     delete,
     drop_table,
-    get_table_schema,
     insert,
+    prepare_table,
     select,
     update,
-    validate_clause,
 )
 from .decorators import create_cacher
 from .parser import (
@@ -159,7 +158,7 @@ def run():
 
                 case "drop_table":
                     (table_name,) = args
-                    if get_table_schema(metadata, table_name) is None:
+                    if prepare_table(metadata, table_name) is None:
                         continue
                     updated_metadata = drop_table(metadata, table_name)
                     if updated_metadata is None:
@@ -178,7 +177,7 @@ def run():
 
                 case "insert":
                     table_name, values = args
-                    if get_table_schema(metadata, table_name) is None:
+                    if prepare_table(metadata, table_name) is None:
                         continue
                     table_data = load_table_data(table_name)
                     table_data = insert(metadata, table_name, table_data, values)
@@ -194,8 +193,8 @@ def run():
 
                 case "select":
                     table_name, where_clause = args
-                    schema = get_table_schema(metadata, table_name)
-                    if schema is None or validate_clause(schema, where_clause) is None:
+                    schema = prepare_table(metadata, table_name, where_clause)
+                    if schema is None:
                         continue
                     condition = (
                         None if where_clause is None else tuple(where_clause.items())
@@ -218,12 +217,10 @@ def run():
 
                 case "update":
                     table_name, set_clause, where_clause = args
-                    schema = get_table_schema(metadata, table_name)
+                    schema = prepare_table(
+                        metadata, table_name, set_clause, where_clause
+                    )
                     if schema is None:
-                        continue
-                    if validate_clause(schema, set_clause) is None:
-                        continue
-                    if validate_clause(schema, where_clause) is None:
                         continue
                     table_data = load_table_data(table_name)
                     matching_rows = select(table_data, where_clause)
@@ -246,8 +243,8 @@ def run():
 
                 case "delete":
                     table_name, where_clause = args
-                    schema = get_table_schema(metadata, table_name)
-                    if schema is None or validate_clause(schema, where_clause) is None:
+                    schema = prepare_table(metadata, table_name, where_clause)
+                    if schema is None:
                         continue
                     table_data = load_table_data(table_name)
                     matching_rows = select(table_data, where_clause)
@@ -270,7 +267,7 @@ def run():
 
                 case "info":
                     (table_name,) = args
-                    schema = get_table_schema(metadata, table_name)
+                    schema = prepare_table(metadata, table_name)
                     if schema is None:
                         continue
                     table_data = load_table_data(table_name)
