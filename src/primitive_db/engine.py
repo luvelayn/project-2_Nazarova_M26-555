@@ -15,6 +15,7 @@ from .core import (
     update,
     validate_clause,
 )
+from .decorators import create_cacher
 from .parser import (
     parse_columns,
     parse_delete,
@@ -100,6 +101,7 @@ def _parse_command(user_input):
 
 def run():
     """Read commands, call database operations and display their results."""
+    cache_result = create_cacher()
     print_help()
 
     while True:
@@ -141,12 +143,14 @@ def run():
 
                 case "create_table":
                     table_name, columns = args
-                    create_table(metadata, table_name, columns)
+                    updated_metadata = create_table(metadata, table_name, columns)
+                    if updated_metadata is None:
+                        continue
                     save_table_data(table_name, [])
-                    save_metadata(DB_META_PATH, metadata)
+                    save_metadata(DB_META_PATH, updated_metadata)
                     columns_description = ", ".join(
                         f"{name}:{dtype}"
-                        for name, dtype in metadata[table_name].items()
+                        for name, dtype in updated_metadata[table_name].items()
                     )
                     print(
                         f'Таблица "{table_name}" успешно создана '
@@ -155,8 +159,13 @@ def run():
 
                 case "drop_table":
                     (table_name,) = args
-                    drop_table(metadata, table_name)
-                    save_metadata(DB_META_PATH, metadata)
+                    if get_table_schema(metadata, table_name) is None:
+                        continue
+                    updated_metadata = drop_table(metadata, table_name)
+                    if updated_metadata is None:
+                        continue
+                    cache_result = create_cacher()
+                    save_metadata(DB_META_PATH, updated_metadata)
                     try:
                         delete_table_data(table_name)
                     except OSError as error:
@@ -169,9 +178,13 @@ def run():
 
                 case "insert":
                     table_name, values = args
-                    get_table_schema(metadata, table_name)
+                    if get_table_schema(metadata, table_name) is None:
+                        continue
                     table_data = load_table_data(table_name)
                     table_data = insert(metadata, table_name, table_data, values)
+                    if table_data is None:
+                        continue
+                    cache_result = create_cacher()
                     save_table_data(table_name, table_data)
                     new_id = table_data[-1]["ID"]
                     print(
@@ -182,9 +195,19 @@ def run():
                 case "select":
                     table_name, where_clause = args
                     schema = get_table_schema(metadata, table_name)
-                    validate_clause(schema, where_clause)
-                    table_data = load_table_data(table_name)
-                    selected_data = select(table_data, where_clause)
+                    if schema is None or validate_clause(schema, where_clause) is None:
+                        continue
+                    condition = (
+                        None if where_clause is None else tuple(where_clause.items())
+                    )
+                    cache_key = (table_name, condition)
+                    selected_data = cache_result(
+                        cache_key,
+                        lambda: select(load_table_data(table_name), where_clause),
+                    )
+                    if selected_data is None:
+                        cache_result = create_cacher()
+                        continue
                     columns = list(schema)
                     output = PrettyTable()
                     output.field_names = columns
@@ -196,13 +219,24 @@ def run():
                 case "update":
                     table_name, set_clause, where_clause = args
                     schema = get_table_schema(metadata, table_name)
-                    validate_clause(schema, set_clause)
-                    validate_clause(schema, where_clause)
+                    if schema is None:
+                        continue
+                    if validate_clause(schema, set_clause) is None:
+                        continue
+                    if validate_clause(schema, where_clause) is None:
+                        continue
                     table_data = load_table_data(table_name)
-                    updated_ids = [
-                        row["ID"] for row in select(table_data, where_clause)
-                    ]
+                    matching_rows = select(table_data, where_clause)
+                    if matching_rows is None:
+                        continue
+                    if not matching_rows:
+                        print("Подходящие записи не найдены.")
+                        continue
+                    updated_ids = [row["ID"] for row in matching_rows]
                     table_data = update(table_data, set_clause, where_clause)
+                    if table_data is None:
+                        continue
+                    cache_result = create_cacher()
                     save_table_data(table_name, table_data)
                     for row_id in updated_ids:
                         print(
@@ -213,12 +247,20 @@ def run():
                 case "delete":
                     table_name, where_clause = args
                     schema = get_table_schema(metadata, table_name)
-                    validate_clause(schema, where_clause)
+                    if schema is None or validate_clause(schema, where_clause) is None:
+                        continue
                     table_data = load_table_data(table_name)
-                    deleted_ids = [
-                        row["ID"] for row in select(table_data, where_clause)
-                    ]
+                    matching_rows = select(table_data, where_clause)
+                    if matching_rows is None:
+                        continue
+                    if not matching_rows:
+                        print("Подходящие записи не найдены.")
+                        continue
+                    deleted_ids = [row["ID"] for row in matching_rows]
                     table_data = delete(table_data, where_clause)
+                    if table_data is None:
+                        continue
+                    cache_result = create_cacher()
                     save_table_data(table_name, table_data)
                     for row_id in deleted_ids:
                         print(
@@ -229,6 +271,8 @@ def run():
                 case "info":
                     (table_name,) = args
                     schema = get_table_schema(metadata, table_name)
+                    if schema is None:
+                        continue
                     table_data = load_table_data(table_name)
                     columns_description = ", ".join(
                         f"{name}:{dtype}" for name, dtype in schema.items()
@@ -239,5 +283,3 @@ def run():
 
         except (OSError, json.JSONDecodeError) as error:
             print(f"Ошибка работы с файлами: {error}")
-        except (ValueError, TypeError) as error:
-            print(f"Ошибка: {error}")

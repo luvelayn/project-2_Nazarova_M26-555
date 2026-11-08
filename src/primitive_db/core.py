@@ -1,4 +1,5 @@
 from .constants import VALID_TYPES
+from .decorators import confirm_action, handle_db_errors, log_time
 
 
 def _validate_name(name):
@@ -31,6 +32,7 @@ def _validate_columns(columns):
     return {"ID": "int", **schema}
 
 
+@handle_db_errors
 def get_table_schema(metadata, table_name):
     """Check the table name and existence, then return its schema."""
     _validate_name(table_name)
@@ -55,17 +57,20 @@ def _clause_item(clause):
     return item
 
 
+@handle_db_errors
 def validate_clause(schema, clause):
-    """Check a clause's column and value type against the schema; allow None."""
+    """Return True for a valid optional clause or None on a handled error."""
     if clause is None:
-        return
+        return True
 
     column, value = _clause_item(clause)
     if column not in schema:
         raise ValueError(f'Не существует столбца с именем "{column}".')
     _validate_value(column, schema[column], value)
+    return True
 
 
+@handle_db_errors
 def create_table(metadata, table_name, columns):
     """Add a validated schema to metadata in place and return metadata."""
     _validate_name(table_name)
@@ -76,16 +81,23 @@ def create_table(metadata, table_name, columns):
     return metadata
 
 
+@handle_db_errors
+@confirm_action("удаление таблицы")
 def drop_table(metadata, table_name):
     """Remove a table schema from metadata in place and return metadata."""
-    get_table_schema(metadata, table_name)
+    if get_table_schema(metadata, table_name) is None:
+        return None
     metadata.pop(table_name)
     return metadata
 
 
+@handle_db_errors
+@log_time
 def insert(metadata, table_name, table_data, values):
-    """Append a validated row in place and return the same table_data list."""
+    """Return a new list with a validated row appended."""
     schema = get_table_schema(metadata, table_name)
+    if schema is None:
+        return None
     columns = [(column, dtype) for column, dtype in schema.items() if column != "ID"]
 
     if len(values) != len(columns):
@@ -100,8 +112,7 @@ def insert(metadata, table_name, table_data, values):
         _validate_value(column, dtype, value)
         new_row[column] = value
 
-    table_data.append(new_row)
-    return table_data
+    return table_data + [new_row]
 
 
 def _matches(row, column, value):
@@ -111,6 +122,8 @@ def _matches(row, column, value):
     return type(row[column]) is type(value) and row[column] == value
 
 
+@handle_db_errors
+@log_time
 def select(table_data, where_clause=None):
     """Return a new list containing references to matching rows.
 
@@ -123,26 +136,30 @@ def select(table_data, where_clause=None):
     return [row for row in table_data if _matches(row, column, value)]
 
 
+@handle_db_errors
 def update(table_data, set_clause, where_clause):
-    """Update matching rows in place and return table_data, preserving IDs."""
+    """Return all rows with matching rows preserving IDs."""
     target_column, new_value = _clause_item(set_clause)
     if target_column == "ID":
         raise ValueError('Изменять столбец "ID" запрещено.')
 
-    matching_rows = select(table_data, where_clause)
-    for row in matching_rows:
-        if target_column not in row:
-            raise ValueError(f'Не существует столбца с именем "{target_column}".')
-        _validate_value(target_column, type(row[target_column]).__name__, new_value)
+    filter_column, filter_value = _clause_item(where_clause)
+    updated_data = []
+    for row in table_data:
+        if _matches(row, filter_column, filter_value):
+            if target_column not in row:
+                raise ValueError(f'Не существует столбца с именем "{target_column}".')
+            _validate_value(target_column, type(row[target_column]).__name__, new_value)
+            row = row.copy()
+            row[target_column] = new_value
+        updated_data.append(row)
 
-    for row in matching_rows:
-        row[target_column] = new_value
-
-    return table_data
+    return updated_data
 
 
+@handle_db_errors
+@confirm_action("удаление записей")
 def delete(table_data, where_clause):
-    """Remove matching rows in place and return the same table_data list."""
+    """Return a new list without matching rows."""
     column, value = _clause_item(where_clause)
-    table_data[:] = [row for row in table_data if not _matches(row, column, value)]
-    return table_data
+    return [row for row in table_data if not _matches(row, column, value)]
